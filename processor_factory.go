@@ -13,11 +13,15 @@ const (
 )
 
 // processorFactory is the factory for the metrics processor
-type processorFactory struct{}
+type processorFactory struct{
+	logExporter consumer.Logs
+}
 
 // NewFactory creates a new factory for the metrics processor
-func NewFactory() component.Factory {
-	return &processorFactory{}
+func NewFactory(logExporter consumer.Logs) component.Factory {
+	return &processorFactory{
+		logExporter: logExporter,
+	}
 }
 
 // Type returns the type of the factory
@@ -31,6 +35,8 @@ func (f *processorFactory) CreateDefaultConfig() component.Config {
 		WindowSize:       100,
 		AnomalyThreshold: 3.0,
 		MinDataPoints:    10,
+		LogAnomalies:     true,
+		LogSeverity:      LogSeverityWarn,
 	}
 }
 
@@ -45,5 +51,5 @@ func (f *processorFactory) CreateMetricsProcessor(
 	if !ok {
 		return nil, component.ErrDataTypeIsNotSupported
 	}
-	return newMetricsProcessor(nextConsumer, pCfg), nil
+	return newMetricsProcessor(nextConsumer, f.logExporter, pCfg), nil
 }

@@ -7,8 +7,22 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/consumer"
+)
+
+// LogSeverity defines the severity level for anomaly log entries
+type LogSeverity string
+
+const (
+	// LogSeverityInfo represents INFO severity level
+	LogSeverityInfo LogSeverity = "INFO"
+	// LogSeverityWarn represents WARN severity level
+	LogSeverityWarn LogSeverity = "WARN"
+	// LogSeverityError represents ERROR severity level
+	LogSeverityError LogSeverity = "ERROR"
 )
 
 // Config defines the configuration for the metrics processor
@@ -19,6 +33,10 @@ type Config struct {
 	AnomalyThreshold float64 `mapstructure:"anomaly_threshold"`
 	// MinDataPoints is the minimum number of data points required before performing anomaly detection
 	MinDataPoints int `mapstructure:"min_data_points"`
+	// LogAnomalies determines whether to create log entries for anomalies
+	LogAnomalies bool `mapstructure:"log_anomalies"`
+	// LogSeverity is the severity level for anomaly log entries
+	LogSeverity LogSeverity `mapstructure:"log_severity"`
 }
 
 // metricStats holds statistical data for a specific metric
@@ -36,23 +54,27 @@ type metricStats struct {
 // metricsProcessor implements the metrics processor for statistical analysis and anomaly detection
 type metricsProcessor struct {
 	nextConsumer consumer.Metrics
+	logExporter  consumer.Logs
 	config       *Config
 	// metricsData maps metric names to their statistical data
 	metricsData map[string]*metricStats
 	mu          sync.RWMutex
 }
 
-func newMetricsProcessor(next consumer.Metrics, config *Config) *metricsProcessor {
+func newMetricsProcessor(next consumer.Metrics, logExporter consumer.Logs, config *Config) *metricsProcessor {
 	if config == nil {
 		config = &Config{
 			WindowSize:       100,
 			AnomalyThreshold: 3.0,
 			MinDataPoints:    10,
+			LogAnomalies:     true,
+			LogSeverity:      LogSeverityWarn,
 		}
 	}
 	
 	return &metricsProcessor{
 		nextConsumer: next,
+		logExporter:  logExporter,
 		config:       config,
 		metricsData:  make(map[string]*metricStats),
 	}
@@ -105,8 +127,11 @@ func (mp *metricsProcessor) handleGaugeMetric(name string, metric pmetric.Metric
 		isAnomaly := mp.updateStats(name, value, timestamp)
 		if isAnomaly {
 			fmt.Printf("ANOMALY DETECTED: Metric %s with value %f is outside normal range\n", name, value)
-			// Here you could add code to create a new metric indicating the anomaly
-			// or send an alert to an external system
+			
+			// Create log entry for the anomaly if configured
+			if mp.config.LogAnomalies && mp.logExporter != nil {
+				mp.createAnomalyLogEntry(name, value, timestamp)
+			}
 		}
 	}
 }
@@ -123,6 +148,11 @@ func (mp *metricsProcessor) handleSumMetric(name string, metric pmetric.Metric) 
 		isAnomaly := mp.updateStats(name, value, timestamp)
 		if isAnomaly {
 			fmt.Printf("ANOMALY DETECTED: Metric %s with value %f is outside normal range\n", name, value)
+			
+			// Create log entry for the anomaly if configured
+			if mp.config.LogAnomalies && mp.logExporter != nil {
+				mp.createAnomalyLogEntry(name, value, timestamp)
+			}
 		}
 	}
 }
@@ -141,6 +171,11 @@ func (mp *metricsProcessor) handleHistogramMetric(name string, metric pmetric.Me
 			isAnomaly := mp.updateStats(name, avg, timestamp)
 			if isAnomaly {
 				fmt.Printf("ANOMALY DETECTED: Histogram metric %s with average %f is outside normal range\n", name, avg)
+				
+				// Create log entry for the anomaly if configured
+				if mp.config.LogAnomalies && mp.logExporter != nil {
+					mp.createAnomalyLogEntry(name, avg, timestamp)
+				}
 			}
 		}
 	}
@@ -160,6 +195,11 @@ func (mp *metricsProcessor) handleSummaryMetric(name string, metric pmetric.Metr
 			isAnomaly := mp.updateStats(name, avg, timestamp)
 			if isAnomaly {
 				fmt.Printf("ANOMALY DETECTED: Summary metric %s with average %f is outside normal range\n", name, avg)
+				
+				// Create log entry for the anomaly if configured
+				if mp.config.LogAnomalies && mp.logExporter != nil {
+					mp.createAnomalyLogEntry(name, avg, timestamp)
+				}
 			}
 		}
 	}
@@ -239,4 +279,61 @@ func (mp *metricsProcessor) GetMetricStats(metricName string) (mean, stdDev floa
 	defer stats.mu.RUnlock()
 	
 	return stats.mean, stats.stdDev, stats.count, true
+}
+
+// createAnomalyLogEntry creates and exports a log entry for an anomaly
+func (mp *metricsProcessor) createAnomalyLogEntry(metricName string, value float64, timestamp time.Time) {
+	// Create a new logs collection
+	logs := plog.NewLogs()
+	
+	// Add a resource
+	resource := logs.ResourceLogs().AppendEmpty()
+	resource.Resource().Attributes().PutStr("service.name", "metrics-processor")
+	
+	// Add a scope
+	scope := resource.ScopeLogs().AppendEmpty()
+	
+	// Add a log record
+	record := scope.LogRecords().AppendEmpty()
+	record.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+	
+	// Set severity based on configuration
+	switch mp.config.LogSeverity {
+	case LogSeverityInfo:
+		record.SetSeverityNumber(plog.SeverityNumberInfo)
+		record.SetSeverityText("INFO")
+	case LogSeverityWarn:
+		record.SetSeverityNumber(plog.SeverityNumberWarn)
+		record.SetSeverityText("WARN")
+	case LogSeverityError:
+		record.SetSeverityNumber(plog.SeverityNumberError)
+		record.SetSeverityText("ERROR")
+	default:
+		record.SetSeverityNumber(plog.SeverityNumberWarn)
+		record.SetSeverityText("WARN")
+	}
+	
+	// Get the mean and standard deviation for context
+	mean, stdDev, _, _ := mp.GetMetricStats(metricName)
+	zScore := math.Abs(value - mean) / stdDev
+	
+	// Set the log message
+	message := fmt.Sprintf("ANOMALY DETECTED: Metric %s with value %f is outside normal range (z-score: %.2f)", 
+		metricName, value, zScore)
+	record.Body().SetStr(message)
+	
+	// Add attributes
+	attrs := record.Attributes()
+	attrs.PutStr("metric.name", metricName)
+	attrs.PutDouble("metric.value", value)
+	attrs.PutDouble("metric.mean", mean)
+	attrs.PutDouble("metric.stddev", stdDev)
+	attrs.PutDouble("metric.zscore", zScore)
+	attrs.PutStr("anomaly.type", "statistical")
+	attrs.PutStr("processor.name", "metricsprocessor")
+	
+	// Export the log
+	if err := mp.logExporter.ConsumeLogs(context.Background(), logs); err != nil {
+		fmt.Printf("Failed to export anomaly log: %v\n", err)
+	}
 }

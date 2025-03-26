@@ -12,6 +12,10 @@ processors:
     anomaly_threshold: 3.0
     # Minimum number of data points required before performing anomaly detection
     min_data_points: 10
+    # Whether to create log entries for anomalies
+    log_anomalies: true
+    # Severity level for anomaly log entries (INFO, WARN, ERROR)
+    log_severity: WARN
 
 exporters:
   debug:
@@ -22,4 +26,7 @@ service:
     metrics:
       receivers: [otlp]
       processors: [metricsprocessor]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
       exporters: [debug]

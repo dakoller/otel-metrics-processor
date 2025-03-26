@@ -4,6 +4,6 @@ dist:
 exporters:
   - debug
 processors:
-  - gomod: "github.com/yourusername/otel-metrics-processor v0.0.1"
+  - gomod: "github.com/dakoller/otel-metrics-processor v0.0.1"
 receivers:
   - otlp
