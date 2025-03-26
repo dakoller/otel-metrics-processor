@@ -2,8 +2,8 @@ dist:
   name: otelcol-custom
   output_path: ./bin
 exporters:
-  - debug
+  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.96.0
 processors:
-  - gomod: "github.com/dakoller/otel-metrics-processor v0.0.1"
+  - gomod: github.com/dakoller/otel-metrics-processor v0.0.1
 receivers:
-  - otlp
+  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.96.0

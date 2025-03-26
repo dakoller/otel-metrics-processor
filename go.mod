@@ -1,4 +1,4 @@
-module github.com/yourusername/otel-metrics-processor
+module github.com/dakoller/otel-metrics-processor
 
 go 1.21.5
 

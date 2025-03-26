@@ -53,12 +53,25 @@ This processor is designed to be built into a custom OpenTelemetry Collector usi
    go install go.opentelemetry.io/collector/cmd/builder@latest
    ```
 
-2. Build the custom collector using the provided `collector-builder.yaml`:
+2. Configure the collector builder in `collector-builder.yaml`:
+   ```yaml
+   dist:
+     name: otelcol-custom
+     output_path: ./bin
+   exporters:
+     - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.96.0
+   processors:
+     - gomod: github.com/yourusername/otel-metrics-processor v0.0.1
+   receivers:
+     - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.96.0
+   ```
+
+3. Build the custom collector:
    ```bash
    builder --config=collector-builder.yaml
    ```
 
-3. The built collector will be available in the `./bin` directory.
+4. The built collector will be available in the `./bin` directory.
 
 ## Usage
 
