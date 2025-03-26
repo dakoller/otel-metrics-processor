@@ -1,0 +1,9 @@
+dist:
+  name: otelcol-custom
+  output_path: ./bin
+exporters:
+  - debug
+processors:
+  - gomod: "github.com/yourusername/otel-metrics-processor v0.0.1"
+receivers:
+  - otlp

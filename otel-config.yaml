@@ -1,0 +1,25 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+processors:
+  metricsprocessor:
+    # Number of data points to consider for statistical calculations
+    window_size: 100
+    # Number of standard deviations from the mean to consider a value anomalous
+    anomaly_threshold: 3.0
+    # Minimum number of data points required before performing anomaly detection
+    min_data_points: 10
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [metricsprocessor]
+      exporters: [debug]
